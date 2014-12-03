@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"github.com/streadway/amqp"
+	"time"
 )
 
 type Dispatcher struct {
@@ -21,9 +22,7 @@ type ScheduleTable struct {
 
 func (d *Dispatcher) addObjects(objects []map[string]interface{}) {
 	for _, element := range objects {
-		//timeStamp := element["Timestamp"]
 		d.ScheduleTable.InsertObject(element)
-		//fmt.Println(timeStamp)
 	}
 }
 
@@ -36,11 +35,8 @@ func (t *ScheduleTable) Get(timestamp string) (obj map[string]interface{}) {
 }
 
 func (t *ScheduleTable) InsertObject(obj map[string]interface{}) {
-
 	timestamp := obj["Timestamp"]
-
 	var currentTableRow TableRow
-
 	for tableRow := range t.Rows {
 		if tableRow.TimeStamp == timestamp {
 			currentTableRow = tableRow
@@ -68,12 +64,10 @@ func (t *ScheduleTable) InsertObject(obj map[string]interface{}) {
 func (t *ScheduleTable) AddRow(row *TableRow) {
 	tablesize := len(t.Rows)
 	t.Rows[tablesize].Timestamp = row.Timestamp
-	t.Rows[tablesize].Objects = row.Objects
-
+	t.Rows[tablesize].Timestamp = row.Objects
 }
 
 func (t *ScheduleTable) Contains(timestamp string) bool {
-
 	var currentTableRow TableRow
 	for rows := range currentTableRow {
 		if rows["Timestamp"] == timestamp {
@@ -81,6 +75,47 @@ func (t *ScheduleTable) Contains(timestamp string) bool {
 		}
 	}
 	return false
+
+}
+
+func (t *ScheduleTable) Delete(timestamp string) {
+
+	index := -1
+
+	for i, element := range t.Rows {
+		if element.Timestamp == timestamp {
+
+			nextrow := obj + 1
+			for nextrow, _ := range t.Rows {
+				t.Rows[obj].Timestamp = t.Rows[nextrow].Timestamp
+				t.Rows[obj].Objects = t.Rows[nextrow].Objects
+			}
+
+			index = i
+			break
+		}
+	}
+
+	if index != -1 {
+		if index == 0 {
+			t.Rows = t.Rows[1:0]
+		} else {
+			t.Rows = append(t.Rows[0:index-1], t.Rows[index:])
+		}
+
+	}
+
+	/*	for obj := range t.Rows {
+		if t.Rows[obj].Timestamp == timestamp {
+			nextrow := obj + 1
+			for nextrow, _ := range t.Rows {
+				t.Rows[obj].Timestamp = t.Rows[nextrow].Timestamp
+				t.Rows[obj].Objects = t.Rows[nextrow].Objects
+			}
+			break
+		}
+
+	}*/
 
 }
 
@@ -94,8 +129,6 @@ func (t *ScheduleTable) GetForExecution(timestamp string) (row *TableRow) {
 
 }
 
-/////////////////////////////////////////////////////////////////////////////////////////////////
-
 func newDispatcher() (d *Dispatcher) {
 	newObj := Dispatcher{}
 	newObj.ScheduleTable = ScheduleTable{}
@@ -105,18 +138,24 @@ func newDispatcher() (d *Dispatcher) {
 
 }
 
-func startDispatchTimer() { //set timer interval for 1 second
+func (t *ScheduleTable) startDispatchTimer() { //objetcs []map[string]interface{}) { //set timer interval for 1 second
 	c := time.Tick(1 * time.Second)
 	for now := range c {
-		dispatchObjectToRabbitMQ(objects)
+		//get a timestamp of now
+		currenttime := time.Now().Local()
+		x := currenttime.Format("20141212101112")
+		objectlists := t.Rows.Get(x)
+		if x != nil {
+			dispatchObjectToRabbitMQ(objectlists)
+			t.Delete(x)
+		}
+
 	}
 
 }
 
 func dispatchObjectToRabbitMQ(objects []map[string]interface{}) {
-	//get objects
 	objectsset := getFakeObjects()
-
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
@@ -138,22 +177,13 @@ func dispatchObjectToRabbitMQ(objects []map[string]interface{}) {
 
 	for ob := range objects {
 
-		t := time.Now().Local()
-		abc := t.Format("20060102150405")
-
-		currentTimeInt, err := strconv.Atoi(abc)
-		if err != nil {
-			fmt.Println(err)
-
-		}
-
 		sort.Strings(objects)
 
 		for transfer := range objects {
 			dataset, _ := json.Marshal(objects[transfer])
 			body := dataset
 			err = ch.Publish(
-				"",     // exchange
+				" ",    // exchange
 				q.Name, // routing key
 				false,  // mandatory
 				false,  // immediate
@@ -170,7 +200,7 @@ func dispatchObjectToRabbitMQ(objects []map[string]interface{}) {
 
 func getFakeObjects() (objects []ScheduleObject) {
 
-	objects = make([]ScheduleObject, 5)
+	objects = make([]ScheduleObject, 1)
 
 	for index, _ := range objects {
 
@@ -198,7 +228,6 @@ func getFakeObjects() (objects []ScheduleObject) {
 		objects[index].Timestamp = t //.Format("20060102150405")
 		objects[index].OperationData = tmpOperationData
 		objects[index].ControlData = tmpControlData
-		//fmt.Println(objects[index], "\n")
 
 	}
 

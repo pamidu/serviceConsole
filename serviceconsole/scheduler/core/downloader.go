@@ -33,7 +33,6 @@ func startDownloadTimer(d *Downloader) { //call downloadObjects every 15 minutes
 	for now := range c {
 		downloadObjects(d)
 	}
-
 }
 
 func executeObjects(d *Downloader, raw []byte) {
